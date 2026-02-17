@@ -24,12 +24,12 @@ colors = cmap(ind_colors)
 phi_ca_0 = 1.1      # Initial cathode voltage, relative to anode (V)
 phi_elyte_0 = 0.6   # Initial electrolyte voltage at equilibrium, relative to anode (V)
 nvars = 3           # Number of variables in solution vector SV.  Set this manually,
-                    #for now
-sigma_io = 0.08
-dy_elyte = 10e-6
+                    #   for now
+sigma_io = 0.08     # Electrolyte ionic conductivity (S/m)
+dy_elyte = 10e-6    # Electrolyte thickness (m)
 
 class params:
-    i_ext = 500     # External current (A/m2)
+    i_ext = 0     # External current (A/m2)
     T = 973         # Temperature (K)
 
     E_an = -0.4     # Equilibrium potential at anode interface (anode - elyte, V)
@@ -38,14 +38,14 @@ class params:
     i_o_ca = 0.1e3  # Cathode exchange current density, A/m2 of total SOFC area.
     i_o_an = 0.5e3  # Anode exchange current density, A/m2 of total SOFC area.
 
-    n_elec_an = 2
-    n_elec_ca = 2
+    n_elec_an = 2   # Number of electrical charge transferred per mol rxn, anode rxn
+    n_elec_ca = 2   # Number of electrical charge transferred per mol rxn, cathode rxn
 
-    beta_an = 0.5
-    beta_ca = 0.5
+    beta_an = 0.5   # Symmetry parameter, anode charge transfer
+    beta_ca = 0.5   # Symmetry parameter, cathode charge transfer
 
-    C_dl_an = 5e-2
-    C_dl_ca = 1e0
+    C_dl_an = 5e-2  # anode-electrolyte interface capacitance, F/m2 total SOFC area.
+    C_dl_ca = 1e0   # cathode-electrolyte interface capacitance, F/m2 total SOFC area.
 
 # Positions in solution vector
 class ptr:
@@ -60,42 +60,57 @@ F = 96485               # Faraday's constant, C/mol of charge
 
 
 # Derived parameters:
+#   Beta*nF/RT for each reaction (Beta*n renamed alpha_fwd, here)
+#   (1-Beta)*nF/RT for each reaction ((1-Beta)*n renamed alpha_rev, here)
 params.aF_RT_an_fwd = params.beta_an * params.n_elec_an * F / R / params.T
 params.aF_RT_an_rev = (1- params.beta_an) * params.n_elec_an * F / R / params.T
 
 params.aF_RT_ca_fwd = params.beta_ca * params.n_elec_ca * F / R / params.T
 params.aF_RT_ca_rev = (1- params.beta_ca) * params.n_elec_ca * F / R / params.T
 
+# Electric potential drop across the electrolyte:
 dPhi_elyte = params.i_ext * dy_elyte / sigma_io
 
 "========= INITIALIZE MODEL ========="
+# Initialize the solution vector:
 SV_0 = np.zeros((nvars,))
+
 # Set initial values, according to your approach:  eg:
 SV_0[ptr.phi_ca] = phi_ca_0 # Change this if needed, to fit your ptr approach
-# Add the other values:
-SV_0[ptr.phi_elyte_ca] = phi_elyte_0 - dPhi_elyte
-SV_0[ptr.phi_elyte_an] = phi_elyte_0
+
+# Electrolyte potential at cathode interface:
+SV_0[ptr.phi_elyte_ca] = phi_elyte_0 - 0.5*dPhi_elyte
+
+# Ellectrolyte potential at anode interface:
+SV_0[ptr.phi_elyte_an] = phi_elyte_0 + 0.5*dPhi_elyte
 
 "========= DEFINE RESIDUAL FUNCTION ========="
 def derivative(_, SV, pars, ptr):
 
+    # Initialize the derivative / residual:
     dSV_dt = np.zeros_like(SV)
 
-    # Anode double layer:
+    # Anode double layer
+    #   Overpotential:
     eta = -SV[ptr.phi_elyte_an] - pars.E_an # Note phi_an = 0
+    #   Faradaic current:
     i_Far_an = pars.i_o_an*(exp(-pars.aF_RT_an_fwd*eta) - exp(pars.aF_RT_an_rev*eta))
+    #   Double-layer current:
     i_dl_an = -(pars.i_ext + i_Far_an)
-    # This is the electrolyte potential, which is equal to -dPhi_dl_an:
+    # This is for the electrolyte potential, which is equal to -dPhi_dl_an:
     dSV_dt[ptr.phi_elyte_an] =  i_dl_an / pars.C_dl_an
 
     # phi_elyte_ca evolves at exactly same rate as phi_elyte_ca:
     dSV_dt[ptr.phi_elyte_ca] = dSV_dt[ptr.phi_elyte_an]
 
     # Cathode double layer:
+    #   Overpotential:
     eta = (SV[ptr.phi_ca]-SV[ptr.phi_elyte_ca]) - pars.E_ca
+    #   Faradaic current:
     i_Far_ca = pars.i_o_ca*(exp(-pars.aF_RT_ca_fwd*eta) - exp(pars.aF_RT_ca_rev*eta))
+    #   Double-layer current:
     i_dl_ca = pars.i_ext - i_Far_ca
-
+    #   Cathode potential evolves at the rate of the local elyte, minus double layer:
     dSV_dt[ptr.phi_ca] = dSV_dt[ptr.phi_elyte_ca] - i_dl_ca / pars.C_dl_ca
 
     return dSV_dt
@@ -126,6 +141,7 @@ fig.set_size_inches((4,3))
 # Plot the data, using ms for time units:
 ax.plot(1e3*solution.t, solution.y.T, label=labels)
 
+# Set y-axis limits
 ax.set_ylim((lower, upper))
 
 # Label the axes
