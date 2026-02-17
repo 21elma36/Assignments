@@ -1,5 +1,8 @@
 # sofc_model.py
 
+lower = -0.05
+upper = 1.3
+
 "========= IMPORT MODULES ========="
 from math import exp
 import matplotlib.pyplot as plt
@@ -10,7 +13,7 @@ from scipy.integrate import solve_ivp
 
 # Plotting formatting:
 font = font_manager.FontProperties(family='Arial',
-                                   style='normal', size=12)
+                                   style='normal', size=10)
 ncolors = 3 # how many colors?
 ind_colors = np.linspace(0, 1.15, ncolors)
 colors = np.zeros_like(ind_colors)
@@ -22,9 +25,11 @@ phi_ca_0 = 1.1      # Initial cathode voltage, relative to anode (V)
 phi_elyte_0 = 0.6   # Initial electrolyte voltage at equilibrium, relative to anode (V)
 nvars = 3           # Number of variables in solution vector SV.  Set this manually,
                     #for now
+sigma_io = 0.08
+dy_elyte = 10e-6
 
 class params:
-    i_ext = 0     # External current (A/m2)
+    i_ext = 500     # External current (A/m2)
     T = 973         # Temperature (K)
 
     E_an = -0.4     # Equilibrium potential at anode interface (anode - elyte, V)
@@ -39,8 +44,8 @@ class params:
     beta_an = 0.5
     beta_ca = 0.5
 
-    C_dl_an = 1e-3
-    C_dl_ca = 2e-3
+    C_dl_an = 5e-2
+    C_dl_ca = 1e0
 
 # Positions in solution vector
 class ptr:
@@ -61,12 +66,14 @@ params.aF_RT_an_rev = (1- params.beta_an) * params.n_elec_an * F / R / params.T
 params.aF_RT_ca_fwd = params.beta_ca * params.n_elec_ca * F / R / params.T
 params.aF_RT_ca_rev = (1- params.beta_ca) * params.n_elec_ca * F / R / params.T
 
+dPhi_elyte = params.i_ext * dy_elyte / sigma_io
+
 "========= INITIALIZE MODEL ========="
 SV_0 = np.zeros((nvars,))
 # Set initial values, according to your approach:  eg:
 SV_0[ptr.phi_ca] = phi_ca_0 # Change this if needed, to fit your ptr approach
 # Add the other values:
-SV_0[ptr.phi_elyte_ca] = phi_elyte_0
+SV_0[ptr.phi_elyte_ca] = phi_elyte_0 - dPhi_elyte
 SV_0[ptr.phi_elyte_an] = phi_elyte_0
 
 "========= DEFINE RESIDUAL FUNCTION ========="
@@ -74,16 +81,28 @@ def derivative(_, SV, pars, ptr):
 
     dSV_dt = np.zeros_like(SV)
 
-    eta = -SV[ptr.phi_elyte_an] - pars.E_an
+    # Anode double layer:
+    eta = -SV[ptr.phi_elyte_an] - pars.E_an # Note phi_an = 0
     i_Far_an = pars.i_o_an*(exp(-pars.aF_RT_an_fwd*eta) - exp(pars.aF_RT_an_rev*eta))
     i_dl_an = -(pars.i_ext + i_Far_an)
+    # This is the electrolyte potential, which is equal to -dPhi_dl_an:
     dSV_dt[ptr.phi_elyte_an] =  i_dl_an / pars.C_dl_an
+
+    # phi_elyte_ca evolves at exactly same rate as phi_elyte_ca:
+    dSV_dt[ptr.phi_elyte_ca] = dSV_dt[ptr.phi_elyte_an]
+
+    # Cathode double layer:
+    eta = (SV[ptr.phi_ca]-SV[ptr.phi_elyte_ca]) - pars.E_ca
+    i_Far_ca = pars.i_o_ca*(exp(-pars.aF_RT_ca_fwd*eta) - exp(pars.aF_RT_ca_rev*eta))
+    i_dl_ca = pars.i_ext - i_Far_ca
+
+    dSV_dt[ptr.phi_ca] = dSV_dt[ptr.phi_elyte_ca] - i_dl_ca / pars.C_dl_ca
 
     return dSV_dt
 
 "========= RUN / INTEGRATE MODEL ========="
 # Function call expects inputs (residual function, time span, initial value).
-solution = solve_ivp(derivative, [0, .000001], SV_0, args=(params, ptr), method='BDF',
+solution = solve_ivp(derivative, [0, .001], SV_0, args=(params, ptr), method='BDF',
                      rtol = 1e-6, atol = 1e-8)
 
 "========= PLOTTING AND POST-PROCESSING ========="
@@ -107,12 +126,14 @@ fig.set_size_inches((4,3))
 # Plot the data, using ms for time units:
 ax.plot(1e3*solution.t, solution.y.T, label=labels)
 
+ax.set_ylim((lower, upper))
+
 # Label the axes
 ax.set_xlabel('Time (ms)')
 ax.set_ylabel('Cell Potential (V)')
 
 # Create legend
-ax.legend(prop=font, frameon=False)
+ax.legend(prop=font, frameon=False, loc='upper right', ncols=3)
 
 # Clean up whitespace, etc.
 fig.tight_layout()
