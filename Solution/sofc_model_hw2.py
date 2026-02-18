@@ -29,7 +29,7 @@ sigma_io = 0.08     # Electrolyte ionic conductivity (S/m)
 dy_elyte = 10e-6    # Electrolyte thickness (m)
 
 class params:
-    i_ext = 0     # External current (A/m2)
+    i_ext = 500     # External current (A/m2)
     T = 973         # Temperature (K)
 
     E_an = -0.4     # Equilibrium potential at anode interface (anode - elyte, V)
@@ -155,6 +155,6 @@ ax.legend(prop=font, frameon=False, loc='upper right', ncols=3)
 fig.tight_layout()
 
 # Uncomment to save the figure, if you want. Name it however you please:
-plt.savefig('HW2_results.png', dpi=400)
+plt.savefig('HW2_results_500.png', dpi=400)
 # Show figure:
 plt.show()
