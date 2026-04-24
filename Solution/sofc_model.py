@@ -10,37 +10,19 @@ from matplotlib import colormaps
 from matplotlib import font_manager
 import numpy as np
 from scipy.integrate import solve_ivp
+import sofc_init
 
 
 # Import your inputs:
 from sofc_inputs import params
 
-# Positions in solution vector
-class ptr:
-    # Approach 1: store the actual material electric potentials:
-    phi_an = np.arange(0, params.nvars_an_tot, params.nvars_an)
-    phi_elyte = np.arange(params.nvars_an_tot,
-                         params.nvars_an_tot + params.nvars_elyte_tot,
-                         params.nvars_elyte)
-    phi_ca = np.arange(params.nvars_an_tot + params.nvars_elyte_tot,
-                       params.nvars_tot,
-                       params.nvars_ca)
+""" Initialize the model:
+    - create SV ptr
+    - create SV_0
+"""
+ptr = sofc_init.ptr(params)
 
-
-# Electric potential drop across the electrolyte (from Ohm's Law)
-dPhi_elyte = params.i_ext * params.dy_elyte /params.sigma_io
-
-"========= INITIALIZE MODEL ========="
-# Initialize the solution vector:
-SV_0 = np.zeros((params.nvars_tot,))
-
-# Set initial values, according to your approach:  eg:
-SV_0[ptr.phi_ca] = params.phi_ca_0 # Change this if needed, to fit your ptr approach
-
-for i in range(params.npts_elyte):
-    SV_0[ptr.phi_elyte[i]] = (params.phi_elyte_0 - ((2*i + 1) - params.npts_elyte)
-                              * dPhi_elyte / (2*params.npts_elyte))
-
+SV_0 = sofc_init.initialize(params, ptr)
 
 "========= DEFINE RESIDUAL FUNCTION ========="
 def derivative(_, SV, pars, ptr):
